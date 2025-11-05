@@ -23,7 +23,10 @@ def read_planilha(caminho: pathlib.Path) -> pd.DataFrame:
     sufixo = caminho.suffix.lower()
 
     if sufixo == ".csv":
-        dataframe = pd.read_csv(caminho)
+        # Usa o engine ``python`` para permitir a detecção automática de delimitadores
+        # (por exemplo, ``;``) a partir do conteúdo do arquivo, evitando que todo o
+        # cabeçalho seja tratado como uma única coluna.
+        dataframe = pd.read_csv(caminho, sep=None, engine="python")
     elif sufixo in {".xls", ".xlsx"}:
         dataframe = pd.read_excel(caminho)
     else:
