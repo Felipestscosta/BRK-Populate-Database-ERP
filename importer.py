@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sqlite3
 import sys
+import unicodedata
 from typing import Iterable, List
 
 import pandas as pd
+from pandas.api.types import is_object_dtype, is_string_dtype
 
 
 def read_planilha(caminho: pathlib.Path) -> pd.DataFrame:
@@ -40,6 +43,20 @@ def read_planilha(caminho: pathlib.Path) -> pd.DataFrame:
     return dataframe
 
 
+def _normalizar_coluna(nome: str) -> str:
+    """Normaliza o `nome` removendo acentuação e aplicando snake_case."""
+    nome = unicodedata.normalize("NFKD", nome)
+    nome = nome.encode("ascii", "ignore").decode("ascii")
+    nome = nome.lower()
+    nome = re.sub(r"[^a-z0-9]+", "_", nome)
+    nome = nome.strip("_")
+
+    if nome and nome[0].isdigit():
+        nome = f"col_{nome}"
+
+    return nome
+
+
 def preparar_nomes_colunas(colunas: Iterable[str]) -> List[str]:
     """Garante que os nomes das colunas sejam adequados para uso em SQL."""
     nomes_ajustados: List[str] = []
@@ -51,6 +68,8 @@ def preparar_nomes_colunas(colunas: Iterable[str]) -> List[str]:
         if not nome:
             nome = f"coluna_{indice}"
 
+        nome = _normalizar_coluna(nome) or f"coluna_{indice}"
+
         nome_original = nome
         contador = 1
         while nome in colunas_existentes:
@@ -61,6 +80,20 @@ def preparar_nomes_colunas(colunas: Iterable[str]) -> List[str]:
         nomes_ajustados.append(nome)
 
     return nomes_ajustados
+
+
+def limpar_valores_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Remove espaços em branco nas extremidades de valores textuais."""
+
+    for coluna in dataframe.columns:
+        serie = dataframe[coluna]
+
+        if is_string_dtype(serie) or is_object_dtype(serie):
+            dataframe[coluna] = serie.map(
+                lambda valor: valor.strip() if isinstance(valor, str) else valor
+            )
+
+    return dataframe
 
 
 def escapar_identificador(identificador: str) -> str:
@@ -101,6 +134,7 @@ def importar_planilha(caminho_planilha: pathlib.Path, banco_dados: pathlib.Path)
     dataframe = read_planilha(caminho_planilha)
     colunas = preparar_nomes_colunas(dataframe.columns)
     dataframe.columns = colunas
+    dataframe = limpar_valores_dataframe(dataframe)
 
     with sqlite3.connect(banco_dados) as conexao:
         cursor = conexao.cursor()
